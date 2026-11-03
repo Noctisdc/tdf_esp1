@@ -1,111 +1,87 @@
 import streamlit as st
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 import pandas as pd
 import re
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from nltk.stem import SnowballStemmer
 
-st.title("🔍 Demo TF-IDF en Español")
+st.set_page_config(page_title="Motor de Búsqueda TF-IDF", layout="wide")
 
-# Documentos de ejemplo
-default_docs = """El perro ladra fuerte en el parque.
-El gato maúlla suavemente durante la noche.
-El perro y el gato juegan juntos en el jardín.
-Los niños corren y se divierten en el parque.
-La música suena muy alta en la fiesta.
-Los pájaros cantan hermosas melodías al amanecer."""
+st.title("Motor de Búsqueda y Análisis de Textos (TF-IDF)")
 
-# Stemmer en español
 stemmer = SnowballStemmer("spanish")
 
-def tokenize_and_stem(text):
-    # Minúsculas
-    text = text.lower()
-    # Solo letras españolas y espacios
-    text = re.sub(r'[^a-záéíóúüñ\s]', ' ', text)
-    # Tokenizar
-    tokens = [t for t in text.split() if len(t) > 1]
-    # Aplicar stemming
-    stems = [stemmer.stem(t) for t in tokens]
-    return stems
+def procesar_texto(texto):
+    texto = texto.lower()
+    texto = re.sub(r'[^a-záéíóúüñ\s]', ' ', texto)
+    tokens = [t for t in texto.split() if len(t) > 1]
+    return [stemmer.stem(t) for t in tokens]
 
-# Layout en dos columnas
-col1, col2 = st.columns([2, 1])
+st.sidebar.header("Parámetros del Buscador")
+umbral_similitud = st.sidebar.slider("Umbral mínimo de similitud", 0.0, 1.0, 0.05, 0.01)
+cantidad_resultados = st.sidebar.number_input("Top K resultados", min_value=1, max_value=10, value=3)
 
-with col1:
-    text_input = st.text_area("📝 Documentos (uno por línea):", default_docs, height=150)
-    question = st.text_input("❓ Escribe tu pregunta:", "¿Dónde juegan el perro y el gato?")
+docs_base = """Los microcontroladores ESP32 integran wifi y bluetooth para proyectos conectados.
+La arquitectura de la nube permite procesar datos telemétricos en tiempo real.
+Los sensores DHT22 miden con precisión la temperatura y humedad del entorno.
+El desarrollo de dashboards con Streamlit facilita la visualización de datos.
+MQTT es un protocolo ligero ideal para la comunicación entre dispositivos físicos.
+Las bases de datos de series de tiempo como InfluxDB son óptimas para almacenar métricas."""
 
-with col2:
-    st.markdown("### 💡 Preguntas sugeridas:")
-    
-    # NUEVAS preguntas optimizadas para mayor similitud
-    if st.button("¿Dónde juegan el perro y el gato?", use_container_width=True):
-        st.session_state.question = "¿Dónde juegan el perro y el gato?"
-        st.rerun()
-    
-    if st.button("¿Qué hacen los niños en el parque?", use_container_width=True):
-        st.session_state.question = "¿Qué hacen los niños en el parque?"
-        st.rerun()
-        
-    if st.button("¿Cuándo cantan los pájaros?", use_container_width=True):
-        st.session_state.question = "¿Cuándo cantan los pájaros?"
-        st.rerun()
-        
-    if st.button("¿Dónde suena la música alta?", use_container_width=True):
-        st.session_state.question = "¿Dónde suena la música alta?"
-        st.rerun()
-        
-    if st.button("¿Qué animal maúlla durante la noche?", use_container_width=True):
-        st.session_state.question = "¿Qué animal maúlla durante la noche?"
-        st.rerun()
+col_izq, col_der = st.columns([1.2, 1])
 
-# Actualizar pregunta si se seleccionó una sugerida
-if 'question' in st.session_state:
-    question = st.session_state.question
+with col_izq:
+    entrada_documentos = st.text_area("Base de conocimiento (un documento por línea):", docs_base, height=220)
 
-if st.button("🔍 Analizar", type="primary"):
-    documents = [d.strip() for d in text_input.split("\n") if d.strip()]
-    
-    if len(documents) < 1:
-        st.error("⚠️ Ingresa al menos un documento.")
-    elif not question.strip():
-        st.error("⚠️ Escribe una pregunta.")
-    else:
-        # Crear vectorizador TF-IDF
-        vectorizer = TfidfVectorizer(
-            tokenizer=tokenize_and_stem,
-            min_df=1  # Incluir todas las palabras
-        )
-        
-        # Ajustar con documentos
-        X = vectorizer.fit_transform(documents)
-        
-        # Mostrar matriz TF-IDF
-        st.markdown("### 📊 Matriz TF-IDF")
-        df_tfidf = pd.DataFrame(
-            X.toarray(),
-            columns=vectorizer.get_feature_names_out(),
-            index=[f"Doc {i+1}" for i in range(len(documents))]
-        )
-        st.dataframe(df_tfidf.round(3), use_container_width=True)
-        
-        # Calcular similitud con la pregunta
-        question_vec = vectorizer.transform([question])
-        similarities = cosine_similarity(question_vec, X).flatten()
-        
-        # Encontrar mejor respuesta
-        best_idx = similarities.argmax()
-        best_doc = documents[best_idx]
-        best_score = similarities[best_idx]
-        
-        # Mostrar respuesta
-        st.markdown("### 🎯 Respuesta")
-        st.markdown(f"**Tu pregunta:** {question}")
-        
-        if best_score > 0.01:  # Umbral muy bajo
-            st.success(f"**Respuesta:** {best_doc}")
-            st.info(f"📈 Similitud: {best_score:.3f}")
+with col_der:
+    consulta_usuario = st.text_input("Escribe tu consulta:", "¿Qué dispositivo mide la temperatura?")
+    opciones_rapidas = [
+        "Ninguna",
+        "¿Qué dispositivo mide la temperatura?",
+        "¿Cómo funciona el protocolo MQTT?",
+        "¿Para qué sirven las bases de datos?"
+    ]
+    seleccion_rapida = st.selectbox("O usa una consulta de prueba:", opciones_rapidas)
+
+if seleccion_rapida != "Ninguna":
+    consulta_usuario = seleccion_rapida
+
+if st.button("Ejecutar Análisis TF-IDF", type="primary"):
+    lista_docs = [d.strip() for d in entrada_documentos.split("\n") if d.strip()]
+
+    if len(lista_docs) > 0 and consulta_usuario.strip():
+        vectorizador = TfidfVectorizer(tokenizer=procesar_texto, min_df=1)
+        matriz_tfidf = vectorizador.fit_transform(lista_docs)
+
+        vector_consulta = vectorizador.transform([consulta_usuario])
+        similitudes = cosine_similarity(vector_consulta, matriz_tfidf).flatten()
+
+        datos_resultados = []
+        for i, puntaje in enumerate(similitudes):
+            datos_resultados.append({
+                "Documento": lista_docs[i], 
+                "Similitud": puntaje,
+                "ID": f"Doc {i+1}"
+            })
+
+        df_res = pd.DataFrame(datos_resultados).sort_values(by="Similitud", ascending=False)
+        df_filtrado = df_res[df_res["Similitud"] >= umbral_similitud].head(cantidad_resultados)
+
+        st.markdown("### Resultados de la Búsqueda")
+        if not df_filtrado.empty:
+            for idx, fila in df_filtrado.iterrows():
+                st.write(f"**{fila['ID']}** ({fila['Similitud']:.3f}) - {fila['Documento']}")
+            
+            st.bar_chart(df_res.set_index("ID")["Similitud"])
         else:
-            st.warning(f"**Respuesta (baja confianza):** {best_doc}")
-            st.info(f"📉 Similitud: {best_score:.3f}")
+            st.write("No se encontraron documentos que superen el umbral establecido.")
+
+        st.markdown("### Matriz de Pesos")
+        df_matriz = pd.DataFrame(
+            matriz_tfidf.toarray(),
+            columns=vectorizador.get_feature_names_out(),
+            index=[f"Doc {i+1}" for i in range(len(lista_docs))]
+        )
+        st.dataframe(df_matriz)
+    else:
+        st.write("Asegúrate de tener al menos un documento y una consulta escrita.")
