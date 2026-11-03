@@ -5,83 +5,88 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
 from nltk.stem import SnowballStemmer
 
-st.set_page_config(page_title="Motor de Búsqueda TF-IDF", layout="wide")
-
-st.title("Motor de Búsqueda y Análisis de Textos (TF-IDF)")
+st.set_page_config(page_title="Analizador TF-IDF", layout="wide")
 
 stemmer = SnowballStemmer("spanish")
 
-def procesar_texto(texto):
+def limpiar_texto(texto):
     texto = texto.lower()
     texto = re.sub(r'[^a-záéíóúüñ\s]', ' ', texto)
     tokens = [t for t in texto.split() if len(t) > 1]
     return [stemmer.stem(t) for t in tokens]
 
-st.sidebar.header("Parámetros del Buscador")
-umbral_similitud = st.sidebar.slider("Umbral mínimo de similitud", 0.0, 1.0, 0.05, 0.01)
-cantidad_resultados = st.sidebar.number_input("Top K resultados", min_value=1, max_value=10, value=3)
+st.title("Sistema de Recuperación de Información")
 
-docs_base = """Los microcontroladores ESP32 integran wifi y bluetooth para proyectos conectados.
-La arquitectura de la nube permite procesar datos telemétricos en tiempo real.
-Los sensores DHT22 miden con precisión la temperatura y humedad del entorno.
-El desarrollo de dashboards con Streamlit facilita la visualización de datos.
-MQTT es un protocolo ligero ideal para la comunicación entre dispositivos físicos.
-Las bases de datos de series de tiempo como InfluxDB son óptimas para almacenar métricas."""
+st.sidebar.header("Configuración del Motor")
+umbral = st.sidebar.slider("Umbral mínimo de relevancia", 0.0, 1.0, 0.05, 0.01)
+max_res = st.sidebar.number_input("Límite de resultados a mostrar", 1, 20, 5)
+usar_bigramas = st.sidebar.checkbox("Incluir bigramas (pares de palabras)")
 
-col_izq, col_der = st.columns([1.2, 1])
+rango_ngramas = (1, 2) if usar_bigramas else (1, 1)
 
-with col_izq:
-    entrada_documentos = st.text_area("Base de conocimiento (un documento por línea):", docs_base, height=220)
+tab_buscar, tab_datos, tab_matriz = st.tabs(["Buscador", "Gestión de Datos", "Análisis del Modelo"])
 
-with col_der:
-    consulta_usuario = st.text_input("Escribe tu consulta:", "¿Qué dispositivo mide la temperatura?")
-    opciones_rapidas = [
-        "Ninguna",
-        "¿Qué dispositivo mide la temperatura?",
-        "¿Cómo funciona el protocolo MQTT?",
-        "¿Para qué sirven las bases de datos?"
-    ]
-    seleccion_rapida = st.selectbox("O usa una consulta de prueba:", opciones_rapidas)
-
-if seleccion_rapida != "Ninguna":
-    consulta_usuario = seleccion_rapida
-
-if st.button("Ejecutar Análisis TF-IDF", type="primary"):
-    lista_docs = [d.strip() for d in entrada_documentos.split("\n") if d.strip()]
-
-    if len(lista_docs) > 0 and consulta_usuario.strip():
-        vectorizador = TfidfVectorizer(tokenizer=procesar_texto, min_df=1)
-        matriz_tfidf = vectorizador.fit_transform(lista_docs)
-
-        vector_consulta = vectorizador.transform([consulta_usuario])
-        similitudes = cosine_similarity(vector_consulta, matriz_tfidf).flatten()
-
-        datos_resultados = []
-        for i, puntaje in enumerate(similitudes):
-            datos_resultados.append({
-                "Documento": lista_docs[i], 
-                "Similitud": puntaje,
-                "ID": f"Doc {i+1}"
-            })
-
-        df_res = pd.DataFrame(datos_resultados).sort_values(by="Similitud", ascending=False)
-        df_filtrado = df_res[df_res["Similitud"] >= umbral_similitud].head(cantidad_resultados)
-
-        st.markdown("### Resultados de la Búsqueda")
-        if not df_filtrado.empty:
-            for idx, fila in df_filtrado.iterrows():
-                st.write(f"**{fila['ID']}** ({fila['Similitud']:.3f}) - {fila['Documento']}")
-            
-            st.bar_chart(df_res.set_index("ID")["Similitud"])
-        else:
-            st.write("No se encontraron documentos que superen el umbral establecido.")
-
-        st.markdown("### Matriz de Pesos")
-        df_matriz = pd.DataFrame(
-            matriz_tfidf.toarray(),
-            columns=vectorizador.get_feature_names_out(),
-            index=[f"Doc {i+1}" for i in range(len(lista_docs))]
-        )
-        st.dataframe(df_matriz)
+with tab_datos:
+    st.subheader("Base de Conocimiento")
+    docs_texto = ""
+    archivo = st.file_uploader("Cargar corpus desde archivo (.txt)", type=["txt"])
+    
+    if archivo is not None:
+        docs_texto = archivo.getvalue().decode("utf-8")
     else:
-        st.write("Asegúrate de tener al menos un documento y una consulta escrita.")
+        docs_texto = st.text_area(
+            "O ingresa los documentos manualmente:", 
+            "El microcontrolador ESP32 permite conexión a redes.\nLa telemetría viaja por el protocolo MQTT hacia el servidor.\nLos sensores DHT22 leen variables físicas del entorno.\nStreamlit sirve para crear dashboards interactivos.\nMQTT es ligero y óptimo para arquitectura IoT.", 
+            height=250
+        )
+
+with tab_buscar:
+    st.subheader("Consulta")
+    consulta = st.text_input("Ingresa los términos a buscar:")
+    ejecutar = st.button("Buscar en documentos")
+
+if ejecutar or consulta:
+    documentos = [d.strip() for d in docs_texto.split("\n") if d.strip()]
+    
+    if documentos and consulta:
+        vectorizador = TfidfVectorizer(tokenizer=limpiar_texto, min_df=1, ngram_range=rango_ngramas)
+        matriz = vectorizador.fit_transform(documentos)
+        
+        vec_consulta = vectorizador.transform([consulta])
+        similitudes = cosine_similarity(vec_consulta, matriz).flatten()
+        
+        resultados = []
+        for i, score in enumerate(similitudes):
+            if score >= umbral:
+                resultados.append({
+                    "ID": f"Doc {i+1}", 
+                    "Relevancia": score, 
+                    "Contenido": documentos[i]
+                })
+                
+        df_resultados = pd.DataFrame(resultados)
+        
+        with tab_buscar:
+            if not df_resultados.empty:
+                df_resultados = df_resultados.sort_values(by="Relevancia", ascending=False).head(max_res)
+                st.write("---")
+                for _, fila in df_resultados.iterrows():
+                    st.write(f"**{fila['ID']}** | Relevancia: {fila['Relevancia']:.4f}")
+                    st.write(f"{fila['Contenido']}")
+                    st.write("---")
+            else:
+                st.write("No se encontraron coincidencias suficientes para esta consulta.")
+
+        with tab_matriz:
+            st.subheader("Métricas Internas")
+            col1, col2 = st.columns(2)
+            col1.metric("Total Documentos Procesados", len(documentos))
+            col2.metric("Tamaño del Vocabulario (Tokens)", len(vectorizador.get_feature_names_out()))
+            
+            st.write("Matriz de Pesos (TF-IDF)")
+            df_matriz = pd.DataFrame(
+                matriz.toarray(),
+                columns=vectorizador.get_feature_names_out(),
+                index=[f"Doc {i+1}" for i in range(len(documentos))]
+            )
+            st.dataframe(df_matriz, use_container_width=True)
